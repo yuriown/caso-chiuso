@@ -28,6 +28,7 @@ import { BanditAI, LawyerAI, Vec, tileCenter } from '../game/ai';
 import { audio } from '../game/audio';
 import { button, text } from '../game/ui';
 import { VirtualJoystick, isTouchDevice } from '../game/joystick';
+import { Fugitive, capitalize, fugitive } from '../game/fugitive';
 import type { EndData } from './EndScene';
 
 interface Book {
@@ -51,6 +52,7 @@ export class GameScene extends Phaser.Scene {
 
   private bandit!: Phaser.GameObjects.Image;
   private banditShadow!: Phaser.GameObjects.Image;
+  private who!: Fugitive;
   private banditVel: Vec = { x: 0, y: 0 };
   private lives = BANDIT_LIVES;
   private stun = 0;
@@ -116,7 +118,8 @@ export class GameScene extends Phaser.Scene {
 
     const start = tileCenter(this.maze.start);
     this.banditShadow = this.add.image(start.x, start.y + 12, 'shadow').setDepth(5);
-    this.bandit = this.add.image(start.x, start.y, 'bandit-0').setOrigin(0.5, 0.6).setDepth(10);
+    this.who = fugitive(this.registry);
+    this.bandit = this.add.image(start.x, start.y, this.who.frames[0]).setOrigin(0.5, 0.6).setScale(this.who.gameScale).setDepth(10);
 
     this.lawyer = this.add.image(WIDTH / 2, HEIGHT - 26, 'mahayana-idle').setOrigin(0.5, 1).setDepth(20);
     this.drawRailing();
@@ -177,7 +180,7 @@ export class GameScene extends Phaser.Scene {
 
   private createHud(): void {
     this.add.rectangle(WIDTH / 2, 20, WIDTH, 40, 0x0d0b1a, 0.9).setDepth(50);
-    text(this, 72, 20, 'BANDIDO', 18, '#ff8a9a').setDepth(51);
+    text(this, 72, 20, this.who.label.toUpperCase(), 18, '#ff8a9a').setDepth(51);
     for (let i = 0; i < BANDIT_LIVES; i++) {
       this.hearts.push(this.add.image(140 + i * 30, 20, 'heart').setDepth(51));
     }
@@ -201,7 +204,7 @@ export class GameScene extends Phaser.Scene {
     } else {
       text(this, 80, HEIGHT - 16, `Mahayana: ${l}`, 14, '#f6d55c').setDepth(30);
     }
-    text(this, WIDTH - 100, HEIGHT - 16, `Bandido: ${b}`, 14, '#ff8a9a').setDepth(30);
+    text(this, WIDTH - 100, HEIGHT - 16, `${this.who.label}: ${b}`, 14, '#ff8a9a').setDepth(30);
 
     const pauseBtn = this.add.rectangle(WIDTH - 24, 20, 36, 30, 0x2a2547).setStrokeStyle(2, 0x6a60a3).setDepth(52);
     text(this, WIDTH - 24, 20, 'II', 18).setDepth(53);
@@ -344,7 +347,7 @@ export class GameScene extends Phaser.Scene {
       const ouch = text(this, this.bandit.x, this.bandit.y - 30, 'OBJEÇÃO!', 18, '#ffdd55').setDepth(60);
       this.tweens.add({ targets: ouch, y: ouch.y - 30, alpha: 0, duration: 800, onComplete: () => ouch.destroy() });
       this.updateHud();
-      if (this.lives <= 0) this.finish('advogada', 'Três livradas: o bandido foi condenado!');
+      if (this.lives <= 0) this.finish('advogada', `Três livradas: ${this.who.name} foi condenado!`);
     } else {
       this.pages(book.to, 4);
       audio.miss();
@@ -455,9 +458,9 @@ export class GameScene extends Phaser.Scene {
     const moving = Math.hypot(vx, vy) > 5;
     if (moving) {
       this.walkAnim += dt;
-      if (vx !== 0) this.bandit.setFlipX(vx < 0);
+      if (vx !== 0 && this.who.flip) this.bandit.setFlipX(vx < 0);
     }
-    this.bandit.setTexture(moving && Math.floor(this.walkAnim * 8) % 2 ? 'bandit-1' : 'bandit-0');
+    this.bandit.setTexture(this.who.frames[moving && Math.floor(this.walkAnim * 8) % 2 ? 1 : 0]);
     this.banditShadow.setPosition(this.bandit.x, this.bandit.y + 12);
 
     if (this.invuln > 0) {
@@ -469,7 +472,7 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    if (this.bandit.y < MAZE_Y + TILE * 0.6) this.finish('bandido', 'O bandido atravessou o labirinto e fugiu!');
+    if (this.bandit.y < MAZE_Y + TILE * 0.6) this.finish('bandido', `${capitalize(this.who.name)} atravessou o labirinto e fugiu!`);
   }
 
   private incoming() {
