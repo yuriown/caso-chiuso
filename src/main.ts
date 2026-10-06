@@ -20,6 +20,8 @@ async function start() {
     height: HEIGHT,
     backgroundColor: '#0d0b1a',
     pixelArt: true,
+    // 2P no celular: um dedo no analogico e outro arremessando
+    input: { activePointers: 3 },
     scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
     scene: [BootScene, MenuScene, GameScene, EndScene],
   });

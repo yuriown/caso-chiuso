@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { DIFFICULTY_LABEL, Difficulty, GameSettings, HEIGHT, Mode, WIDTH } from '../game/config';
 import { audio } from '../game/audio';
 import { Button, button, text } from '../game/ui';
+import { isTouchDevice } from '../game/joystick';
 
 const DIFFICULTIES: Difficulty[] = ['facil', 'normal', 'dificil'];
 
@@ -55,12 +56,30 @@ export class MenuScene extends Phaser.Scene {
     );
     diffButtons.forEach((b, j) => b.setSelected(DIFFICULTIES[j] === this.difficulty));
 
-    const help = [
-      'Mahayana: mire com o mouse e clique para arremessar livros.',
-      'Bandido: WASD ou setas. Fuja pela SAÍDA verde antes do tempo acabar.',
-      '3 livradas e o bandido está condenado!   ·   M: som   ·   P/Esc: pausa',
-    ];
+    const touch = isTouchDevice();
+    const help = touch
+      ? [
+          'Mahayana: toque no labirinto para arremessar livros.',
+          'Bandido: arraste o analógico para fugir pela SAÍDA verde.',
+          '3 livradas e o bandido está condenado!   ·   II: pausa',
+        ]
+      : [
+          'Mahayana: mire com o mouse e clique para arremessar livros.',
+          'Bandido: WASD ou setas. Fuja pela SAÍDA verde antes do tempo acabar.',
+          '3 livradas e o bandido está condenado!   ·   M: som   ·   P/Esc: pausa',
+        ];
     help.forEach((line, i) => text(this, WIDTH / 2, 610 + i * 30, line, 17, '#d9d2ff'));
+
+    if (touch && this.scale.fullscreen.available && !this.scale.isFullscreen) {
+      const full = button(this, WIDTH - 110, 36, '⛶ Tela cheia', () => {}, 190);
+      // o navegador so libera tela cheia dentro do proprio toque
+      full.container.on('pointerup', () => {
+        this.scale.startFullscreen();
+        const orientation = screen.orientation as ScreenOrientation & { lock?: (o: string) => Promise<void> };
+        orientation.lock?.('landscape').catch(() => {});
+        full.container.setVisible(false);
+      });
+    }
 
     this.input.once('pointerdown', () => audio.unlock());
   }
