@@ -15,6 +15,9 @@ export interface Fugitive {
 }
 
 export const SECRET_CODE = 'fazoele';
+/** no celular, sem teclado: tocar no bandido do menu esta quantidade de vezes */
+export const SECRET_TAPS = 13;
+export const SECRET_TAP_GAP = 1500;
 
 const BANDIT: Fugitive = {
   name: 'o bandido',

@@ -3,7 +3,7 @@ import { DIFFICULTY_LABEL, Difficulty, GameSettings, HEIGHT, Mode, WIDTH } from 
 import { audio } from '../game/audio';
 import { Button, button, text } from '../game/ui';
 import { isTouchDevice } from '../game/joystick';
-import { SECRET_CODE, fugitive } from '../game/fugitive';
+import { SECRET_CODE, SECRET_TAPS, SECRET_TAP_GAP, fugitive } from '../game/fugitive';
 
 const DIFFICULTIES: Difficulty[] = ['facil', 'normal', 'dificil'];
 
@@ -36,13 +36,9 @@ export class MenuScene extends Phaser.Scene {
     text(this, 170, 540, 'Mahayana', 22, '#f6d55c');
     const banditName = text(this, WIDTH - 160, 540, who.label === 'Bandido' ? 'O Bandido' : who.label, 22, '#ff8a9a');
 
-    // codigo secreto: digitar "fazoele" troca o bandido pelo Lula (e digitar de novo desfaz)
-    let typed = '';
-    this.input.keyboard?.on('keydown', (e: KeyboardEvent) => {
-      if (e.key.length !== 1) return;
-      typed = (typed + e.key.toLowerCase()).slice(-SECRET_CODE.length);
-      if (typed !== SECRET_CODE) return;
-      typed = '';
+    // codigo secreto: digitar "fazoele" (ou tocar 13 vezes no bandido, no celular)
+    // troca o bandido pelo Lula; repetir desfaz
+    const toggleSecret = () => {
       this.registry.set('segredo', !this.registry.get('segredo'));
       const now = fugitive(this.registry);
       bandit.setTexture(now.big).setFlipX(now.flip);
@@ -53,6 +49,28 @@ export class MenuScene extends Phaser.Scene {
       const msg = text(this, WIDTH / 2, 560, this.registry.get('segredo') ? 'Código secreto ativado!' : 'Código secreto desativado', 22, '#9dffc0').setDepth(10);
       this.tweens.add({ targets: msg, alpha: 0, delay: 1400, duration: 500, onComplete: () => msg.destroy() });
       this.cameras.main.flash(250, 215, 38, 46);
+    };
+
+    let typed = '';
+    this.input.keyboard?.on('keydown', (e: KeyboardEvent) => {
+      if (e.key.length !== 1) return;
+      typed = (typed + e.key.toLowerCase()).slice(-SECRET_CODE.length);
+      if (typed !== SECRET_CODE) return;
+      typed = '';
+      toggleSecret();
+    });
+
+    // toques seguidos: uma pausa maior que SECRET_TAP_GAP recomeca a contagem
+    let taps = 0;
+    let lastTap = 0;
+    bandit.setInteractive();
+    bandit.on('pointerdown', () => {
+      const now = this.time.now;
+      taps = now - lastTap > SECRET_TAP_GAP ? 1 : taps + 1;
+      lastTap = now;
+      if (taps < SECRET_TAPS) return;
+      taps = 0;
+      toggleSecret();
     });
 
     const start = (mode: Mode) => {
