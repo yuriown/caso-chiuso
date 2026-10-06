@@ -27,6 +27,12 @@ const PALETTE: Palette = {
   N: '#b0834f', // saco de dinheiro
   Z: '#ffd34d', // cifrao
   r: '#ff8a9a', // brilho do coracao
+  H: '#d4d4d4', // cabelo e barba grisalhos
+  h: '#a3a3a3',
+  V: '#d7262e', // camisa vermelha
+  v: '#a51b22',
+  A: '#ffd400', // estrela
+  L: '#b0141c', // letras PT
 };
 
 const MAHAYANA_BASE = [
@@ -78,6 +84,55 @@ const BANDIT_A = [
 const HEART = ['.RR.RR.', 'RrRRRRR', 'RRRRRRR', '.RRRRR.', '..RRR..', '...R...'];
 
 const BOOK = ['.BBBBBBBBBB.', 'BBBBBBBBBBBB', 'BBZZZZZZZZBB', 'BBBBBBBBBBBB', 'BBBBBBBBBBBB', 'bbbbbbbbbbbb', '.bbbbbbbbbb.'];
+
+// Lula: grisalho, camisa vermelha e a estrela com "PT" (20 x 28)
+const LULA_HEAD = [
+  '........HHHH........',
+  '......HHSSSSHH......',
+  '.....HSSSSSSSSH.....',
+  '....HSSSSSSSSSSH....',
+  '....HSSXSSSSXSSH....',
+  '....hSSSSSSSSSSh....',
+  '....HSSSSssSSSSH....',
+  '....HHHHHHHHHHHH....',
+  '....HHHHHvvHHHHH....',
+  '.....hHHHHHHHHh.....',
+  '......hHHHHHHh......',
+  '........SSSS........',
+];
+
+// estrela de 5 pontas com "PT" (15 x 13); '.' mantem a camisa
+const STAR = [
+  '.......A.......',
+  '......AAA......',
+  '......AAA......',
+  '.....AAAAA.....',
+  'AAAALLLALLLAAAA',
+  '.AAALALAALAAAA.',
+  '..AALLLAALAAA..',
+  '...ALAAAALAA...',
+  '...ALAAAALAA...',
+  '..AAAAAAAAAAA..',
+  '..AAAA...AAAA..',
+  '.AAA.......AAA.',
+  '.A...........A.',
+];
+
+function lula(step: boolean): string[] {
+  const torso: string[] = [];
+  for (let i = 0; i < STAR.length; i++) {
+    const sleeve = i < 10 ? 'v' : i === 10 ? 'S' : '.';
+    const row = ('.' + sleeve + 'V'.repeat(16) + sleeve + '.').split('');
+    STAR[i].split('').forEach((ch, j) => {
+      if (ch !== '.') row[2 + j] = ch;
+    });
+    torso.push(row.join(''));
+  }
+  const legs = step
+    ? ['...PPPPPPPPPPPPPP...', '....PPPP....PPPP....', '...XXXX......XXXX...']
+    : ['...PPPPPPPPPPPPPP...', '...PPPPP....PPPPP...', '...XXXXX....XXXXX...'];
+  return [...LULA_HEAD, ...torso, ...legs];
+}
 
 function withPixels(rows: string[], pixels: [number, number, string][]): string[] {
   const out = rows.map((r) => r.split(''));
@@ -255,6 +310,9 @@ export function createTextures(scene: Phaser.Scene): void {
   add('bandit-0', pixelCanvas(BANDIT_A, 2));
   add('bandit-1', pixelCanvas(banditB(), 2));
   add('bandit-big', pixelCanvas(BANDIT_A, 9));
+  add('lula-0', pixelCanvas(lula(false), 2));
+  add('lula-1', pixelCanvas(lula(true), 2));
+  add('lula-big', pixelCanvas(lula(false), 7));
   add('heart', pixelCanvas(HEART, 3));
   add('book', pixelCanvas(BOOK, 2));
   add('book-icon', pixelCanvas(BOOK, 3));

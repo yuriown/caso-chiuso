@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { GameSettings, HEIGHT, WIDTH } from '../game/config';
 import { button, text } from '../game/ui';
 import { isTouchDevice } from '../game/joystick';
+import { fugitive } from '../game/fugitive';
 
 export interface EndData {
   settings: GameSettings;
@@ -23,9 +24,10 @@ export class EndScene extends Phaser.Scene {
 
     const lawyerWon = data.winner === 'advogada';
     text(this, WIDTH / 2, 210, lawyerWon ? 'CASO CHIUSO!' : 'ESCAPOU!', 56, lawyerWon ? '#f6d55c' : '#ff8a9a');
-    this.add.image(WIDTH / 2, 300, lawyerWon ? 'mahayana-throw' : 'bandit-0').setScale(lawyerWon ? 1.2 : 2);
+    const who = fugitive(this.registry);
+    this.add.image(WIDTH / 2, 300, lawyerWon ? 'mahayana-throw' : who.frames[0]).setScale(lawyerWon ? 1.2 : 2 * who.gameScale);
     text(this, WIDTH / 2, 375, data.reason, 20, '#d9d2ff');
-    text(this, WIDTH / 2, 415, `Mahayana ${score.advogada}  x  ${score.bandido} Bandido`, 26);
+    text(this, WIDTH / 2, 415, `Mahayana ${score.advogada}  x  ${score.bandido} ${who.label}`, 26);
 
     const again = () => {
       this.scene.stop();

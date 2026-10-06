@@ -3,6 +3,7 @@ import { DIFFICULTY_LABEL, Difficulty, GameSettings, HEIGHT, Mode, WIDTH } from 
 import { audio } from '../game/audio';
 import { Button, button, text } from '../game/ui';
 import { isTouchDevice } from '../game/joystick';
+import { SECRET_CODE, SECRET_TAPS, SECRET_TAP_GAP, fugitive } from '../game/fugitive';
 
 const DIFFICULTIES: Difficulty[] = ['facil', 'normal', 'dificil'];
 
@@ -29,10 +30,48 @@ export class MenuScene extends Phaser.Scene {
 
     const lawyer = this.add.image(170, 400, 'mahayana-big');
     this.tweens.add({ targets: lawyer, y: 392, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
-    const bandit = this.add.image(WIDTH - 160, 420, 'bandit-big').setFlipX(true);
+    const who = fugitive(this.registry);
+    const bandit = this.add.image(WIDTH - 160, 420, who.big).setFlipX(who.flip);
     this.tweens.add({ targets: bandit, x: WIDTH - 150, duration: 400, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
     text(this, 170, 540, 'Mahayana', 22, '#f6d55c');
-    text(this, WIDTH - 160, 540, 'O Bandido', 22, '#ff8a9a');
+    const banditName = text(this, WIDTH - 160, 540, who.label === 'Bandido' ? 'O Bandido' : who.label, 22, '#ff8a9a');
+
+    // codigo secreto: digitar "fazoele" (ou tocar 13 vezes no bandido, no celular)
+    // troca o bandido pelo Lula; repetir desfaz
+    const toggleSecret = () => {
+      this.registry.set('segredo', !this.registry.get('segredo'));
+      const now = fugitive(this.registry);
+      bandit.setTexture(now.big).setFlipX(now.flip);
+      banditName.setText(now.label === 'Bandido' ? 'O Bandido' : now.label);
+      nameButtons();
+      audio.unlock();
+      audio.fanfare(true);
+      const msg = text(this, WIDTH / 2, 560, this.registry.get('segredo') ? 'Código secreto ativado!' : 'Código secreto desativado', 22, '#9dffc0').setDepth(10);
+      this.tweens.add({ targets: msg, alpha: 0, delay: 1400, duration: 500, onComplete: () => msg.destroy() });
+      this.cameras.main.flash(250, 215, 38, 46);
+    };
+
+    let typed = '';
+    this.input.keyboard?.on('keydown', (e: KeyboardEvent) => {
+      if (e.key.length !== 1) return;
+      typed = (typed + e.key.toLowerCase()).slice(-SECRET_CODE.length);
+      if (typed !== SECRET_CODE) return;
+      typed = '';
+      toggleSecret();
+    });
+
+    // toques seguidos: uma pausa maior que SECRET_TAP_GAP recomeca a contagem
+    let taps = 0;
+    let lastTap = 0;
+    bandit.setInteractive();
+    bandit.on('pointerdown', () => {
+      const now = this.time.now;
+      taps = now - lastTap > SECRET_TAP_GAP ? 1 : taps + 1;
+      lastTap = now;
+      if (taps < SECRET_TAPS) return;
+      taps = 0;
+      toggleSecret();
+    });
 
     const start = (mode: Mode) => {
       const settings: GameSettings = { mode, difficulty: this.difficulty };
@@ -44,8 +83,14 @@ export class MenuScene extends Phaser.Scene {
 
     text(this, WIDTH / 2, 190, 'Escolha o modo', 20, '#cccccc');
     button(this, WIDTH / 2, 240, '1P  ·  Ser a Mahayana', () => start('advogada-vs-cpu'));
-    button(this, WIDTH / 2, 300, '1P  ·  Ser o Bandido', () => start('bandido-vs-cpu'));
-    button(this, WIDTH / 2, 360, '2P  ·  Mahayana x Bandido', () => start('versus'));
+    const asBandit = button(this, WIDTH / 2, 300, '', () => start('bandido-vs-cpu'));
+    const versus = button(this, WIDTH / 2, 360, '', () => start('versus'));
+    const nameButtons = () => {
+      const f = fugitive(this.registry);
+      asBandit.label.setText(`1P  ·  Ser ${f.name}`);
+      versus.label.setText(`2P  ·  Mahayana x ${f.label}`);
+    };
+    nameButtons();
 
     text(this, WIDTH / 2, 425, 'Dificuldade da CPU', 20, '#cccccc');
     const diffButtons: Button[] = DIFFICULTIES.map((d, i) =>
