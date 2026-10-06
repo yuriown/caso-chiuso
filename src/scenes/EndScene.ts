@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { GameSettings, HEIGHT, WIDTH } from '../game/config';
 import { button, text } from '../game/ui';
+import { isTouchDevice } from '../game/joystick';
 
 export interface EndData {
   settings: GameSettings;
@@ -35,8 +36,9 @@ export class EndScene extends Phaser.Scene {
       this.scene.stop('Game');
       this.scene.start('Menu');
     };
-    button(this, WIDTH / 2 - 130, 480, 'Revanche (Enter)', again, 240);
-    button(this, WIDTH / 2 + 130, 480, 'Menu (Esc)', menu, 240);
+    const touch = isTouchDevice();
+    button(this, WIDTH / 2 - 130, 480, touch ? 'Revanche' : 'Revanche (Enter)', again, 240);
+    button(this, WIDTH / 2 + 130, 480, touch ? 'Menu' : 'Menu (Esc)', menu, 240);
     this.input.keyboard?.once('keydown-ENTER', again);
     this.input.keyboard?.once('keydown-ESC', menu);
   }

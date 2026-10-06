@@ -14,7 +14,14 @@
 - O círculo vermelho mostra onde o livro vai cair: o bandido pode desviar.
 - Mahayana tem 5 livros, que voltam sozinhos com o tempo.
 - Após levar um livro, o bandido fica tonto por um instante e depois pisca invulnerável.
-- **M** liga/desliga o som · **P** ou **Esc** pausa · **Q** (na pausa) volta ao menu.
+- **M** liga/desliga o som · **P**, **Esc** ou o botão **II** pausa · **Q** (na pausa) volta ao menu.
+
+### No celular
+
+- Jogue com o celular na horizontal; em pé aparece um aviso para girar. No menu há um botão de **tela cheia** (Android).
+- **Mahayana:** toque no labirinto para arremessar.
+- **Bandido:** analógico virtual. Ele nasce onde o dedo toca e vira uma das 8 direções, como o teclado.
+- **2P no mesmo celular:** o analógico do bandido fica na metade esquerda da sacada; a Mahayana toca no labirinto.
 
 Modos: `1P Ser a Mahayana` (CPU é o bandido), `1P Ser o Bandido` (CPU é a Mahayana) e `2P` no mesmo computador. A dificuldade vale para a CPU.
 

@@ -26,7 +26,8 @@ import {
 import { Maze, generateMaze, isOpen } from '../game/maze';
 import { BanditAI, LawyerAI, Vec, tileCenter } from '../game/ai';
 import { audio } from '../game/audio';
-import { text } from '../game/ui';
+import { button, text } from '../game/ui';
+import { VirtualJoystick, isTouchDevice } from '../game/joystick';
 import type { EndData } from './EndScene';
 
 interface Book {
@@ -73,7 +74,9 @@ export class GameScene extends Phaser.Scene {
   private hearts: Phaser.GameObjects.Image[] = [];
   private ammoIcons: Phaser.GameObjects.Image[] = [];
   private timerText!: Phaser.GameObjects.Text;
-  private pauseLayer!: Phaser.GameObjects.Container;
+  private pauseItems: Phaser.GameObjects.GameObject[] = [];
+  private joystick: VirtualJoystick | null = null;
+  private touch = false;
   private keys!: Record<'up' | 'down' | 'left' | 'right' | 'w' | 'a' | 's' | 'd', Phaser.Input.Keyboard.Key>;
 
   constructor() {
@@ -93,6 +96,8 @@ export class GameScene extends Phaser.Scene {
     this.timeLeft = ROUND_SECONDS;
     this.hearts = [];
     this.ammoIcons = [];
+    this.pauseItems = [];
+    this.joystick = null;
     this.banditVel = { x: 0, y: 0 };
   }
 
@@ -122,7 +127,10 @@ export class GameScene extends Phaser.Scene {
     if (!this.humanBandit) this.banditAI = new BanditAI(this.maze, this.settings.difficulty);
     if (!this.humanLawyer) this.lawyerAI = new LawyerAI(this.settings.difficulty);
 
+    this.touch = isTouchDevice();
     this.createHud();
+    // o analogico escuta o toque antes do arremesso, para o dedo dele nao virar livro
+    if (this.humanBandit && this.touch) this.createJoystick();
     this.createInput();
     this.countdown();
   }
@@ -174,9 +182,9 @@ export class GameScene extends Phaser.Scene {
       this.hearts.push(this.add.image(140 + i * 30, 20, 'heart').setDepth(51));
     }
     this.timerText = text(this, WIDTH / 2, 20, '', 28).setDepth(51);
-    text(this, WIDTH - 72, 20, 'MAHAYANA', 18, '#f6d55c').setDepth(51);
+    text(this, WIDTH - 100, 20, 'MAHAYANA', 18, '#f6d55c').setDepth(51);
     for (let i = 0; i < MAX_AMMO; i++) {
-      this.ammoIcons.push(this.add.image(WIDTH - 158 - i * 34, 20, 'book-icon').setDepth(51));
+      this.ammoIcons.push(this.add.image(WIDTH - 182 - i * 34, 20, 'book-icon').setDepth(51));
     }
     const score = this.registry.get('score') as { advogada: number; bandido: number };
     text(this, WIDTH / 2 - 150, 20, `placar ${score.advogada} x ${score.bandido}`, 16, '#aaaaaa').setDepth(51);
@@ -184,20 +192,28 @@ export class GameScene extends Phaser.Scene {
     const labels: Record<GameSettings['mode'], [string, string]> = {
       'advogada-vs-cpu': ['VOCÊ', 'CPU'],
       'bandido-vs-cpu': ['CPU', 'VOCÊ'],
-      versus: ['P1 · mouse', 'P2 · WASD/setas'],
+      versus: this.touch ? ['P1 · toque', 'P2 · analógico'] : ['P1 · mouse', 'P2 · WASD/setas'],
     };
     const [l, b] = labels[this.settings.mode];
-    text(this, 80, HEIGHT - 16, `Mahayana: ${l}`, 14, '#f6d55c').setDepth(30);
+    if (this.humanBandit && this.touch) {
+      // o canto esquerdo da sacada e do analogico
+      text(this, WIDTH - 100, HEIGHT - 36, `Mahayana: ${l}`, 14, '#f6d55c').setDepth(30);
+    } else {
+      text(this, 80, HEIGHT - 16, `Mahayana: ${l}`, 14, '#f6d55c').setDepth(30);
+    }
     text(this, WIDTH - 100, HEIGHT - 16, `Bandido: ${b}`, 14, '#ff8a9a').setDepth(30);
 
-    this.pauseLayer = this.add
-      .container(0, 0, [
-        this.add.rectangle(WIDTH / 2, HEIGHT / 2, WIDTH, HEIGHT, 0x000000, 0.6),
-        text(this, WIDTH / 2, HEIGHT / 2 - 20, 'PAUSA', 56),
-        text(this, WIDTH / 2, HEIGHT / 2 + 40, 'P ou Esc para continuar  ·  Q para o menu', 20),
-      ])
-      .setDepth(200)
-      .setVisible(false);
+    const pauseBtn = this.add.rectangle(WIDTH - 24, 20, 36, 30, 0x2a2547).setStrokeStyle(2, 0x6a60a3).setDepth(52);
+    text(this, WIDTH - 24, 20, 'II', 18).setDepth(53);
+    pauseBtn.setInteractive({ useHandCursor: true }).on('pointerdown', () => this.togglePause());
+
+    const shade = this.add.rectangle(WIDTH / 2, HEIGHT / 2, WIDTH, HEIGHT, 0x000000, 0.6).setDepth(200);
+    const title = text(this, WIDTH / 2, HEIGHT / 2 - 90, 'PAUSA', 56).setDepth(201);
+    const resume = button(this, WIDTH / 2, HEIGHT / 2, 'Continuar', () => this.togglePause(), 260).container.setDepth(201);
+    const menu = button(this, WIDTH / 2, HEIGHT / 2 + 64, 'Menu', () => this.scene.start('Menu'), 260).container.setDepth(201);
+    const hint = text(this, WIDTH / 2, HEIGHT / 2 + 130, this.touch ? '' : 'P ou Esc: continuar  ·  Q: menu', 18, '#cccccc').setDepth(201);
+    this.pauseItems = [shade, title, resume, menu, hint];
+    this.pauseItems.forEach((o) => (o as unknown as Phaser.GameObjects.Components.Visible).setVisible(false));
     this.updateHud();
   }
 
@@ -222,11 +238,27 @@ export class GameScene extends Phaser.Scene {
       if (this.state === 'paused') this.scene.start('Menu');
     });
 
-    this.input.on('pointermove', (p: Phaser.Input.Pointer) => this.crosshair.setPosition(p.x, p.y));
-    this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
+    this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
+      if (!this.joystick?.owns(p)) this.crosshair.setPosition(p.x, p.y);
+    });
+    this.input.on('pointerdown', (p: Phaser.Input.Pointer, over: Phaser.GameObjects.GameObject[]) => {
       audio.unlock();
+      if (over.length || this.joystick?.owns(p)) return; // botao ou analogico
       this.crosshair.setPosition(p.x, p.y);
       if (this.state === 'playing' && this.humanLawyer) this.throwBook({ x: p.x, y: p.y });
+    });
+  }
+
+  private createJoystick(): void {
+    const versus = this.settings.mode === 'versus';
+    this.joystick = new VirtualJoystick(this, {
+      restX: 110,
+      restY: HEIGHT - 62,
+      // no 2P o labirinto e da Mahayana: o analogico nasce so na metade esquerda da sacada
+      zone: versus ? (p) => p.y >= MAZE_BOTTOM && p.x < WIDTH / 2 : () => true,
+      bounds: versus
+        ? new Phaser.Geom.Rectangle(0, MAZE_BOTTOM - 40, WIDTH / 2, HEIGHT - MAZE_BOTTOM + 40)
+        : new Phaser.Geom.Rectangle(0, 40, WIDTH, HEIGHT - 40),
     });
   }
 
@@ -235,7 +267,9 @@ export class GameScene extends Phaser.Scene {
     else if (this.state === 'paused') this.state = 'playing';
     else return;
     const paused = this.state === 'paused';
-    this.pauseLayer.setVisible(paused);
+    this.pauseItems.forEach((o) => (o as unknown as Phaser.GameObjects.Components.Visible).setVisible(paused));
+    this.joystick?.release();
+    if (this.joystick) this.joystick.enabled = !paused;
     this.input.setDefaultCursor(paused || !this.humanLawyer ? 'default' : 'none');
     if (paused) this.tweens.pauseAll();
     else this.tweens.resumeAll();
@@ -407,8 +441,9 @@ export class GameScene extends Phaser.Scene {
       }
     } else {
       const k = this.keys;
-      const dx = (k.right.isDown || k.d.isDown ? 1 : 0) - (k.left.isDown || k.a.isDown ? 1 : 0);
-      const dy = (k.down.isDown || k.s.isDown ? 1 : 0) - (k.up.isDown || k.w.isDown ? 1 : 0);
+      let dx = (k.right.isDown || k.d.isDown ? 1 : 0) - (k.left.isDown || k.a.isDown ? 1 : 0);
+      let dy = (k.down.isDown || k.s.isDown ? 1 : 0) - (k.up.isDown || k.w.isDown ? 1 : 0);
+      if (!dx && !dy && this.joystick) ({ dx, dy } = this.joystick.direction);
       if (dx || dy) this.moveHuman(dx, dy, BANDIT_SPEED * dt);
     }
 
