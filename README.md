@@ -2,6 +2,8 @@
 
 *Caso chiuso* é italiano para "caso encerrado". Jogo de navegador para 1 ou 2 pessoas. A advogada **Mahayana** (loira, olhos verdes) arremessa livros do alto da sacada; o **bandido** tenta atravessar o labirinto e fugir pela saída verde.
 
+**Jogue agora:** https://yuriown.github.io/caso-chiuso/
+
 ## Como jogar
 
 | Papel | Controle | Objetivo |
@@ -25,7 +27,7 @@ npm test           # testes do labirinto e da IA
 npm run build      # gera dist/ estático
 ```
 
-O `dist/` é estático: dá para publicar em GitHub Pages, Netlify, Vercel ou itch.io (HTML5) sem servidor.
+O `dist/` é estático. A cada push na `main`, o GitHub Actions roda os testes, gera o build e publica a demo no GitHub Pages (`.github/workflows/deploy.yml`).
 
 ## Tecnologia
 
