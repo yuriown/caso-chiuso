@@ -77,6 +77,8 @@ export class MenuScene extends Phaser.Scene {
       const settings: GameSettings = { mode, difficulty: this.difficulty };
       this.registry.set('difficulty', this.difficulty);
       this.registry.set('score', { advogada: 0, bandido: 0 });
+      // adversario novo: a Mahayana da CPU comeca sem conhecer o jogador
+      this.registry.remove('modelo');
       audio.startMusic();
       this.scene.start('Game', settings);
     };
