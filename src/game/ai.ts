@@ -1,20 +1,16 @@
-import { AI, BANDIT_SPEED, Difficulty, HIT_RADIUS, MAZE_X, MAZE_Y, TILE, flightTime } from './config';
+import { AI, BANDIT_SPEED, Difficulty, HIT_RADIUS, THROW_COOLDOWN, TILE, flightTime } from './config';
 import { Maze, Tile, distanceMap, findPath, isOpen } from './maze';
+import { Vec, dist, tileCenter, toTile } from './geometry';
+import { PlayerModel, Side } from './playerModel';
 
-export interface Vec {
-  x: number;
-  y: number;
-}
+export type { Vec } from './geometry';
+export { tileCenter, toTile } from './geometry';
 
 export interface IncomingBook {
   id: number;
   to: Vec;
   timeLeft: number;
 }
-
-export const tileCenter = (t: Tile): Vec => ({ x: MAZE_X + t.x * TILE + TILE / 2, y: MAZE_Y + t.y * TILE + TILE / 2 });
-export const toTile = (p: Vec): Tile => ({ x: Math.floor((p.x - MAZE_X) / TILE), y: Math.floor((p.y - MAZE_Y) / TILE) });
-const dist = (a: Vec, b: Vec) => Math.hypot(a.x - b.x, a.y - b.y);
 
 /** Bandido controlado pela CPU: segue para a saida e desvia dos livros que enxerga. */
 export class BanditAI {
@@ -25,7 +21,7 @@ export class BanditAI {
   private exitDist: number[][];
   readonly cfg: (typeof AI.bandit)[Difficulty];
 
-  constructor(private maze: Maze, difficulty: Difficulty) {
+  constructor(private maze: Maze, difficulty: Difficulty, private rng: () => number = Math.random) {
     this.cfg = AI.bandit[difficulty];
     this.exitDist = distanceMap(maze, maze.exit);
   }
@@ -41,7 +37,7 @@ export class BanditAI {
     for (const b of books) {
       if (this.decided.has(b.id) || b.timeLeft > this.cfg.reactWindow) continue;
       this.decided.add(b.id);
-      if (Math.random() > this.cfg.reactChance) continue;
+      if (this.rng() > this.cfg.reactChance) continue;
       if (dist(pos, b.to) > HIT_RADIUS + 16) continue;
       const escape = this.findEscape(here, b);
       if (escape) {
@@ -91,33 +87,111 @@ export class BanditAI {
   }
 }
 
-/** Mahayana controlada pela CPU: mira prevendo onde o bandido vai estar. */
+type Widen<T> = { -readonly [K in keyof T]: T[K] extends boolean ? boolean : T[K] extends number ? number : T[K] };
+export type LawyerConfig = Widen<(typeof AI.lawyer)[Difficulty]>;
+
+/**
+ * Mahayana controlada pela CPU. Em vez de esticar uma reta na direcao do
+ * movimento, ela simula dezenas de futuros possiveis do fugitivo pelos
+ * corredores, usando o que o PlayerModel aprendeu (bifurcacoes, reacao ao
+ * livro, paradas), e mira onde esses futuros mais se concentram.
+ */
 export class LawyerAI {
   private timer = 1.2;
-  private cfg: (typeof AI.lawyer)[Difficulty];
+  private waited = 0;
+  private followUp: { target: Vec; in: number } | null = null;
+  private cfg: LawyerConfig;
 
-  constructor(difficulty: Difficulty) {
-    this.cfg = AI.lawyer[difficulty];
+  constructor(
+    difficulty: Difficulty,
+    private model: PlayerModel,
+    private rng: () => number = Math.random,
+    overrides: Partial<LawyerConfig> = {},
+  ) {
+    this.cfg = { ...AI.lawyer[difficulty], ...overrides };
   }
 
-  update(dt: number, hand: Vec, banditPos: Vec, banditVel: Vec, canThrow: boolean): Vec | null {
+  update(dt: number, hand: Vec, banditPos: Vec, canThrow: boolean): Vec | null {
+    // segundo livro do "cerco": cobre a outra rota de fuga
+    if (this.followUp) {
+      this.followUp.in -= dt;
+      if (this.followUp.in <= 0) {
+        const target = this.followUp.target;
+        this.followUp = null;
+        if (canThrow) return this.miss(target);
+      }
+    }
+
     this.timer -= dt;
     if (this.timer > 0 || !canThrow) return null;
-    this.timer = this.cfg.interval * (0.75 + Math.random() * 0.5);
 
-    let target = { ...banditPos };
-    for (let i = 0; i < 3; i++) {
-      const t = flightTime(dist(hand, target)) * this.cfg.lead;
-      target = { x: banditPos.x + banditVel.x * t, y: banditPos.y + banditVel.y * t };
+    const opts = { learned: this.cfg.learned, reactions: this.cfg.reactions };
+    let flight = flightTime(dist(hand, banditPos));
+    let aim = this.bestSpot(banditPos, flight, opts);
+    flight = flightTime(dist(hand, aim.target));
+    aim = this.bestSpot(banditPos, flight, opts);
+
+    // paciencia: com o futuro muito incerto (ex.: chegando numa bifurcacao), espera um pouco
+    if (aim.confidence < this.cfg.minConfidence && this.waited < this.cfg.patience) {
+      this.waited += 0.15;
+      this.timer = 0.15;
+      return null;
     }
-    const angle = Math.random() * Math.PI * 2;
-    const err = Math.abs(gaussian()) * this.cfg.error;
+    this.waited = 0;
+    this.timer = this.cfg.interval * (0.75 + this.rng() * 0.5);
+    if (this.cfg.bracket && aim.second && aim.secondConfidence >= 0.2) {
+      this.followUp = { target: aim.second, in: THROW_COOLDOWN + 0.02 };
+    }
+    return this.miss(aim.target);
+  }
+
+  /**
+   * Sorteia futuros e acha o ponto que cobre mais deles. Como o jogador reage
+   * diferente a um livro na frente ou atras dele, testa os dois lados e so
+   * aceita a mira que cai no lado que ela mesma supos (senao a previsao se desfaz).
+   */
+  private bestSpot(pos: Vec, t: number, opts: { learned: boolean; reactions: boolean }) {
+    const sides: Side[] = opts.reactions ? ['frente', 'tras'] : ['frente'];
+    const tries = sides.map((side) => {
+      const spot = this.cluster(Array.from({ length: this.cfg.samples }, () => this.model.sample(pos, t, this.rng, opts, side)));
+      return { ...spot, coherent: !opts.reactions || this.model.sideOf(pos, spot.target) === side };
+    });
+    const coherent = tries.filter((s) => s.coherent);
+    const pool = coherent.length ? coherent : tries;
+    return pool.reduce((a, b) => (b.confidence > a.confidence ? b : a));
+  }
+
+  private cluster(samples: Vec[]) {
+    const r = HIT_RADIUS * 0.85;
+    const score = samples.map((a) => samples.reduce((n, b) => n + (dist(a, b) <= r ? 1 : 0), 0));
+    let best = 0;
+    score.forEach((s, i) => {
+      if (s > score[best]) best = i;
+    });
+    let second = -1;
+    score.forEach((s, i) => {
+      if (dist(samples[i], samples[best]) > HIT_RADIUS * 2.2 && (second < 0 || s > score[second])) second = i;
+    });
+    // centro do grupo, e nao a amostra solta
+    const group = samples.filter((s) => dist(s, samples[best]) <= r);
+    const target = { x: group.reduce((a, s) => a + s.x, 0) / group.length, y: group.reduce((a, s) => a + s.y, 0) / group.length };
+    return {
+      target,
+      confidence: score[best] / samples.length,
+      second: second >= 0 ? samples[second] : null,
+      secondConfidence: second >= 0 ? score[second] / samples.length : 0,
+    };
+  }
+
+  private miss(target: Vec): Vec {
+    const angle = this.rng() * Math.PI * 2;
+    const err = Math.abs(gaussian(this.rng)) * this.cfg.error;
     return { x: target.x + Math.cos(angle) * err, y: target.y + Math.sin(angle) * err };
   }
 }
 
-function gaussian(): number {
-  const u = 1 - Math.random();
-  const v = Math.random();
+function gaussian(rng: () => number): number {
+  const u = 1 - rng();
+  const v = rng();
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 }

@@ -2,7 +2,6 @@ import Phaser from 'phaser';
 import {
   AMMO_REGEN,
   BALCONY_Y,
-  BANDIT_HALF,
   BANDIT_LIVES,
   BANDIT_SPEED,
   GameSettings,
@@ -25,6 +24,9 @@ import {
 } from '../game/config';
 import { Maze, generateMaze, isOpen } from '../game/maze';
 import { BanditAI, LawyerAI, Vec, tileCenter } from '../game/ai';
+import { PlayerModel } from '../game/playerModel';
+import { moveHuman, reachedExit, stepToward } from '../game/movement';
+import { toTile } from '../game/geometry';
 import { audio } from '../game/audio';
 import { button, text } from '../game/ui';
 import { VirtualJoystick, isTouchDevice } from '../game/joystick';
@@ -72,6 +74,8 @@ export class GameScene extends Phaser.Scene {
 
   private banditAI: BanditAI | null = null;
   private lawyerAI: LawyerAI | null = null;
+  /** o que a Mahayana da CPU aprendeu do jogador; dura entre revanches */
+  private model: PlayerModel | null = null;
 
   private hearts: Phaser.GameObjects.Image[] = [];
   private ammoIcons: Phaser.GameObjects.Image[] = [];
@@ -128,7 +132,15 @@ export class GameScene extends Phaser.Scene {
     this.input.setDefaultCursor(this.humanLawyer ? 'none' : 'default');
 
     if (!this.humanBandit) this.banditAI = new BanditAI(this.maze, this.settings.difficulty);
-    if (!this.humanLawyer) this.lawyerAI = new LawyerAI(this.settings.difficulty);
+    if (!this.humanLawyer) {
+      this.model = (this.registry.get('modelo') as PlayerModel | undefined) ?? new PlayerModel();
+      this.registry.set('modelo', this.model);
+      this.model.beginRound(this.maze);
+      this.lawyerAI = new LawyerAI(this.settings.difficulty, this.model);
+    } else {
+      this.model = null;
+      this.lawyerAI = null;
+    }
 
     this.touch = isTouchDevice();
     this.createHud();
@@ -325,6 +337,7 @@ export class GameScene extends Phaser.Scene {
       sprite: this.add.image(from.x, from.y, 'book').setDepth(40),
     };
     this.books.push(book);
+    this.model?.onThrow(book.id, to, book.duration, { x: this.bandit.x, y: this.bandit.y });
     audio.throw();
     this.updateHud();
   }
@@ -335,6 +348,7 @@ export class GameScene extends Phaser.Scene {
     book.sprite.setPosition(book.to.x, book.to.y).setDepth(3).setRotation(Phaser.Math.FloatBetween(-0.6, 0.6));
     this.tweens.add({ targets: book.sprite, alpha: 0, delay: 900, duration: 400, onComplete: () => book.sprite.destroy() });
 
+    this.model?.onLand(book.id, { x: this.bandit.x, y: this.bandit.y });
     const d = Phaser.Math.Distance.Between(this.bandit.x, this.bandit.y, book.to.x, book.to.y);
     if (d <= HIT_RADIUS && this.invuln <= 0 && this.state === 'playing') {
       this.lives -= 1;
@@ -391,45 +405,6 @@ export class GameScene extends Phaser.Scene {
 
   // ---------- movimento do bandido ----------
 
-  private blocked(x: number, y: number): boolean {
-    const h = BANDIT_HALF;
-    for (const [cx, cy] of [[x - h, y - h], [x + h, y - h], [x - h, y + h], [x + h, y + h]]) {
-      const tx = Math.floor((cx - MAZE_X) / TILE);
-      const ty = Math.floor((cy - MAZE_Y) / TILE);
-      if (!isOpen(this.maze, tx, ty)) return true;
-    }
-    return false;
-  }
-
-  /** Movimento com colisao e "quina assistida": alinha ao corredor para nao enroscar. */
-  private moveHuman(dx: number, dy: number, dist: number): void {
-    const b = this.bandit;
-    if (dx !== 0 && dy !== 0) {
-      dx *= Math.SQRT1_2;
-      dy *= Math.SQRT1_2;
-    }
-    const tryAxis = (ax: number, ay: number) => {
-      const nx = b.x + ax * dist;
-      const ny = b.y + ay * dist;
-      if (!this.blocked(nx, ny)) {
-        b.setPosition(nx, ny);
-        return;
-      }
-      // alinha ao centro da faixa se a frente estiver livre
-      const tile = { x: Math.floor((b.x - MAZE_X) / TILE), y: Math.floor((b.y - MAZE_Y) / TILE) };
-      const center = tileCenter(tile);
-      if (ax !== 0 && isOpen(this.maze, tile.x + Math.sign(ax), tile.y)) {
-        const diff = center.y - b.y;
-        b.y += Math.sign(diff) * Math.min(Math.abs(diff), dist);
-      } else if (ay !== 0 && isOpen(this.maze, tile.x, tile.y + Math.sign(ay))) {
-        const diff = center.x - b.x;
-        b.x += Math.sign(diff) * Math.min(Math.abs(diff), dist);
-      }
-    };
-    if (dx !== 0) tryAxis(dx, 0);
-    if (dy !== 0) tryAxis(0, dy);
-  }
-
   private updateBandit(dt: number): void {
     const before = { x: this.bandit.x, y: this.bandit.y };
     if (this.stun > 0) {
@@ -437,17 +412,25 @@ export class GameScene extends Phaser.Scene {
     } else if (this.banditAI) {
       const target = this.banditAI.update(dt, before, this.incoming());
       if (target) {
-        const d = Phaser.Math.Distance.Between(before.x, before.y, target.x, target.y);
-        const step = Math.min(d, this.banditAI.speed * dt);
-        this.bandit.x += ((target.x - before.x) / d) * step;
-        this.bandit.y += ((target.y - before.y) / d) * step;
+        const p = stepToward(before, target, this.banditAI.speed * dt);
+        this.bandit.setPosition(p.x, p.y);
       }
     } else {
       const k = this.keys;
       let dx = (k.right.isDown || k.d.isDown ? 1 : 0) - (k.left.isDown || k.a.isDown ? 1 : 0);
       let dy = (k.down.isDown || k.s.isDown ? 1 : 0) - (k.up.isDown || k.w.isDown ? 1 : 0);
       if (!dx && !dy && this.joystick) ({ dx, dy } = this.joystick.direction);
-      if (dx || dy) this.moveHuman(dx, dy, BANDIT_SPEED * dt);
+      if (dx || dy) {
+        const p = moveHuman(this.maze, before, dx, dy, BANDIT_SPEED * dt);
+        this.bandit.setPosition(p.x, p.y);
+      }
+    }
+
+    // trava de seguranca: o centro do fugitivo nunca fica dentro de parede
+    const tile = toTile(this.bandit);
+    if (!isOpen(this.maze, tile.x, tile.y)) {
+      if (import.meta.env.DEV) console.warn('fugitivo dentro da parede: voltando', { before, now: { x: this.bandit.x, y: this.bandit.y }, tile });
+      this.bandit.setPosition(before.x, before.y);
     }
 
     const vx = (this.bandit.x - before.x) / dt;
@@ -472,7 +455,7 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    if (this.bandit.y < MAZE_Y + TILE * 0.6) this.finish('bandido', `${capitalize(this.who.name)} atravessou o labirinto e fugiu!`);
+    if (reachedExit(this.maze, this.bandit)) this.finish('bandido', `${capitalize(this.who.name)} atravessou o labirinto e fugiu!`);
   }
 
   private incoming() {
@@ -515,11 +498,12 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (this.lawyerAI) {
-      const aim = this.lawyerAI.update(dt, this.handPos(), { x: this.bandit.x, y: this.bandit.y }, this.banditVel, this.ammo >= 1 && this.cooldown <= 0);
+      const aim = this.lawyerAI.update(dt, this.handPos(), { x: this.bandit.x, y: this.bandit.y }, this.ammo >= 1 && this.cooldown <= 0);
       if (aim) this.throwBook(aim);
     }
 
     this.updateBandit(dt);
+    this.model?.observe(dt, { x: this.bandit.x, y: this.bandit.y }, this.stun <= 0);
     if (this.state !== 'playing') return;
 
     for (const book of [...this.books]) {

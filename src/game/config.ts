@@ -46,9 +46,10 @@ export const AI = {
     dificil: { speed: 1.0, reactChance: 0.9, reactWindow: 0.65 },
   },
   lawyer: {
-    facil: { interval: 1.5, lead: 0.5, error: 34 },
-    normal: { interval: 1.15, lead: 0.8, error: 24 },
-    dificil: { interval: 0.8, lead: 1.0, error: 12 },
+    // facil: palpites genericos, sem aprender; dificil: aprende, tem paciencia e faz cerco com dois livros
+    facil: { interval: 1.9, error: 48, samples: 8, learned: false, reactions: false, minConfidence: 0, patience: 0, bracket: false },
+    normal: { interval: 1.5, error: 34, samples: 24, learned: true, reactions: true, minConfidence: 0.3, patience: 0.4, bracket: false },
+    dificil: { interval: 1.25, error: 26, samples: 40, learned: true, reactions: true, minConfidence: 0.4, patience: 0.6, bracket: true },
   },
 } as const;
 

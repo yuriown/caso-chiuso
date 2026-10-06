@@ -33,7 +33,7 @@ const LULA: Fugitive = {
   label: 'Lula',
   frames: ['lula-0', 'lula-1'],
   big: 'lula-big',
-  gameScale: 0.7,
+  gameScale: 0.6,
   flip: false,
 };
 
